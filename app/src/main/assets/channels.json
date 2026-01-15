@@ -1,0 +1,34 @@
+{
+  "channels": [
+    {
+      "alias": "Kan 11",
+      "url": "https://kan11w.media.kan.org.il/hls/live/2105694/2105694/master.m3u8",
+      "logoUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/8/82/Kan_11_2017.svg/512px-Kan_11_2017.svg.png"
+    },
+    {
+      "alias": "Keshet 12",
+      "url": "https://keshethls-i.akamaihd.net/hls/live/272857/272857/keshet/01.m3u8",
+      "logoUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/5/5e/Keshet_12_logo.svg/512px-Keshet_12_logo.svg.png"
+    },
+    {
+      "alias": "Reshet 13",
+      "url": "https://d2xg1g9o5vns8m.cloudfront.net/out/v1/0855d703f7d5436fae6a9c7ce8ca5075/index.m3u8",
+      "logoUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/e/e6/Reshet_13_logo_2019.svg/512px-Reshet_13_logo_2019.svg.png"
+    },
+    {
+      "alias": "Now 14",
+      "url": "https://now-live.akamaized.net/hls/live/2033645/now/01.m3u8",
+      "logoUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/6/65/Now_14_Logo.svg/512px-Now_14_Logo.svg.png"
+    },
+    {
+      "alias": "i24 News",
+      "url": "https://bcovlive-a.akamaihd.net/7434f78db0b44e1a8f3e7e0e2b72dfb8/eu-west-1/6057955906001/playlist.m3u8",
+      "logoUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/c/c0/I24NEWS_logo.svg/512px-I24NEWS_logo.svg.png"
+    },
+    {
+      "alias": "Knesset Channel",
+      "url": "https://kanlivep2event-i.akamaihd.net/hls/live/266036/266036/kan-knesset/01.m3u8",
+      "logoUrl": "https://upload.wikimedia.org/wikipedia/commons/thumb/3/39/Knesset_Channel_logo.svg/512px-Knesset_Channel_logo.svg.png"
+    }
+  ]
+}
