@@ -26,6 +26,7 @@ import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.navigation.navArgument
+import com.isratv.android.ui.components.UpdateDialog
 import com.isratv.android.ui.screens.ChannelListScreen
 import com.isratv.android.ui.screens.FavoritesScreen
 import com.isratv.android.ui.screens.PlayerScreen
@@ -46,6 +47,10 @@ fun TvStreamsApp(
 
     // Use a Box to overlay the floating bottom bar on top of the content.
     Box(modifier = Modifier.fillMaxSize()) {
+
+        // --- NEW: Add the Update Dialog here ---
+        // It will be invisible unless an update is detected.
+        UpdateDialog()
 
         // 1. Content Layer - The main navigation host.
         Scaffold(
