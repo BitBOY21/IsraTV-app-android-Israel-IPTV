@@ -63,3 +63,6 @@ google-services.json
 .Trashes
 ehthumbs.db
 Thumbs.db
+
+# Firebase config
+app/google-services.json
