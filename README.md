@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="screenshots/icon_channels.png" alt="IsraTV Logo" width="64" height="64"><br>
+  <img src="screenshots/icon_channels.png" alt="IsraTV Logo" width="128" height="128"><br>
   <font size="6"><b>IsraTV</b></font><br>
 </div>
 
