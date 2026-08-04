@@ -79,6 +79,7 @@ fun PlayerScreen(
 
     var isAudioOnly by rememberSaveable { mutableStateOf(false) }
 
+    // הפעלת השירות עם העברת שם הערוץ כדי שהלוגו הנכון יטען
     DisposableEffect(Unit) {
         AudioPlaybackService.startService(context, channelName, true)
 
@@ -138,7 +139,6 @@ fun PlayerScreen(
             .build()
     }
 
-    // חיבור הנגן להאזנה ישירה של כפתורי הפלט מדיה
     DisposableEffect(exoPlayer) {
         AudioPlaybackService.mediaControlListener = object : AudioPlaybackService.MediaControlListener {
             override fun onPlay() {
@@ -222,7 +222,6 @@ fun PlayerScreen(
         }
     }
 
-    // ה-Broadcast Receiver הזה ממשיך לטפל בכפתורים שבחלון ה-PiP הצף
     DisposableEffect(Unit) {
         val receiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context?, intent: Intent?) {
@@ -451,7 +450,7 @@ fun PlayerScreen(
                 ) {
                     Icon(
                         imageVector = if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                        contentDescription = "Play/Pause",
+                        contentDescription = "Play/Progress",
                         tint = Color.White,
                         modifier = Modifier.size(48.dp)
                     )
