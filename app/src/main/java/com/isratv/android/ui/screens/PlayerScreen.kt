@@ -80,10 +80,8 @@ fun PlayerScreen(
 
     var isAudioOnly by rememberSaveable { mutableStateOf(false) }
 
-    // הפעלת השירות עם העברת שם הערוץ כדי שהלוגו הנכון יטען
     DisposableEffect(Unit) {
         AudioPlaybackService.startService(context, channelName, true)
-
         onDispose {
             AudioPlaybackService.stopService(context)
         }
@@ -172,7 +170,6 @@ fun PlayerScreen(
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val actions = mutableListOf<RemoteAction>()
 
-            // 1. כפתור Play / Pause
             val playPauseIconId = if (isPlaying) R.drawable.ic_pause else R.drawable.ic_play
             val playPauseTitle = if (isPlaying) "Pause" else "Play"
             val playPauseControlType = if (isPlaying) CONTROL_TYPE_PAUSE else CONTROL_TYPE_PLAY
@@ -194,7 +191,6 @@ fun PlayerScreen(
                 playPausePendingIntent
             )
 
-            // 2. כפתור האזנה (Headphones)
             val headphonesIntent = Intent(ACTION_MEDIA_CONTROL).apply {
                 putExtra(EXTRA_CONTROL_TYPE, CONTROL_TYPE_HEADPHONES)
                 setPackage(context.packageName)
@@ -212,7 +208,6 @@ fun PlayerScreen(
                 headphonesPendingIntent
             )
 
-            // 3. כפתור רווח שקוף (Placeholder) שנועד לאזן את המרחב ולדחוף את הכפתורים למרכז/שמאל בצורה מושלמת
             val emptyIntent = Intent("com.isratv.android.EMPTY_ACTION").apply {
                 setPackage(context.packageName)
             }
@@ -222,7 +217,6 @@ fun PlayerScreen(
                 emptyIntent,
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
-            // שימוש באייקון שקוף או מינימלי שלא יפריע בעין, או בפעולה ריקה
             val spacerAction = RemoteAction(
                 Icon.createWithResource(context, android.R.color.transparent),
                 "",
@@ -230,9 +224,6 @@ fun PlayerScreen(
                 emptyPendingIntent
             )
 
-            // סידור 3 הרכיבים כך שנוצר רווח מאזן:
-            // סדר: [אוזניות] -> [פאוז/פליי] -> [מרווח שקוף]
-            // זה מאלץ את אנדרואיד לפרוס אותם על פני הרוחב ולמקם את הפאוז במרכז יחסי מצוין.
             val isRtl = context.resources.configuration.layoutDirection == android.view.View.LAYOUT_DIRECTION_RTL
 
             if (isRtl) {
@@ -259,12 +250,8 @@ fun PlayerScreen(
             override fun onReceive(context: Context?, intent: Intent?) {
                 if (intent?.action == ACTION_MEDIA_CONTROL) {
                     when (intent.getIntExtra(EXTRA_CONTROL_TYPE, 0)) {
-                        CONTROL_TYPE_PLAY -> {
-                            exoPlayer.play()
-                        }
-                        CONTROL_TYPE_PAUSE -> {
-                            exoPlayer.pause()
-                        }
+                        CONTROL_TYPE_PLAY -> { exoPlayer.play() }
+                        CONTROL_TYPE_PAUSE -> { exoPlayer.pause() }
                         CONTROL_TYPE_HEADPHONES -> {
                             toggleAudioOnlyMode(!isAudioOnly)
                             updatePipActions(exoPlayer.isPlaying, !isAudioOnly)
@@ -297,9 +284,16 @@ fun PlayerScreen(
                     }
                 }
                 androidx.lifecycle.Lifecycle.Event.ON_STOP -> {
-                    if (activity?.isFinishing == true) {
+                    if (!isAudioOnly) {
+                        // בכל מקרה משהים את הנגן כשמסך נעלם מהעין
                         exoPlayer.pause()
-                        AudioPlaybackService.stopService(context)
+
+                        // התיקון הקריטי: מוודאים שסוגרים לחלוטין את האפליקציה *אך ורק*
+                        // אם הסיבה שאנחנו ב-ON_STOP היא בגלל סגירת ה-X ב-PiP!
+                        if (mainActivity?.isExitingPip == true) {
+                            AudioPlaybackService.stopService(context)
+                            activity?.finishAndRemoveTask()
+                        }
                     }
                 }
                 else -> {}
@@ -309,7 +303,9 @@ fun PlayerScreen(
 
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(observer)
+            exoPlayer.pause()
             exoPlayer.release()
+            AudioPlaybackService.stopService(context)
         }
     }
 
@@ -349,12 +345,18 @@ fun PlayerScreen(
                 val isNowPlaying = playbackState == Player.STATE_READY && exoPlayer.playWhenReady
                 isPlaying = isNowPlaying
                 updatePipActions(isNowPlaying, isAudioOnly)
-                AudioPlaybackService.updatePlaybackState(context, isNowPlaying)
+
+                if (activity?.isFinishing != true) {
+                    AudioPlaybackService.updatePlaybackState(context, isNowPlaying)
+                }
             }
             override fun onIsPlayingChanged(isPlayingState: Boolean) {
                 isPlaying = isPlayingState
                 updatePipActions(isPlayingState, isAudioOnly)
-                AudioPlaybackService.updatePlaybackState(context, isPlayingState)
+
+                if (activity?.isFinishing != true) {
+                    AudioPlaybackService.updatePlaybackState(context, isPlayingState)
+                }
             }
         }
         exoPlayer.addListener(listener)

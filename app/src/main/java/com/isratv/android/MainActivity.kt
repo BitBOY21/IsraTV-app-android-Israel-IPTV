@@ -1,6 +1,7 @@
 package com.isratv.android
 
 import android.app.PictureInPictureParams
+import android.content.res.Configuration
 import android.os.Build
 import android.os.Bundle
 import android.util.Rational
@@ -10,6 +11,7 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.unit.LayoutDirection
+import com.isratv.android.services.AudioPlaybackService
 import com.isratv.android.ui.TvStreamsApp
 import com.isratv.android.ui.theme.TvStreamsTheme
 import dagger.hilt.android.AndroidEntryPoint
@@ -17,18 +19,16 @@ import dagger.hilt.android.AndroidEntryPoint
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
 
-    // A flag to control whether Picture-in-Picture (PiP) mode is currently allowed.
-    // This is enabled only when the user is on the player screen.
     var isPipEnabled = false
+
+    // החזרנו את המשתנה הקריטי שבודק אם אנחנו יוצאים מ-PiP
+    var isExitingPip = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
         setContent {
-            // Force Left-to-Right (LTR) layout direction for the entire app.
-            // This prevents UI elements from flipping in Right-to-Left (RTL) locales (like Hebrew or Arabic),
-            // ensuring a consistent layout.
             CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
                 TvStreamsTheme {
                     TvStreamsApp()
@@ -39,13 +39,30 @@ class MainActivity : ComponentActivity() {
 
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
-        // Enter Picture-in-Picture mode only if the flag is enabled (i.e., we are on the player screen).
-        // This is triggered when the user presses the home button.
         if (isPipEnabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val params = PictureInPictureParams.Builder()
-                .setAspectRatio(Rational(16, 9)) // Common aspect ratio for video.
+                .setAspectRatio(Rational(16, 9))
                 .build()
             enterPictureInPictureMode(params)
         }
+    }
+
+    // תופס את הרגע המדויק שבו ה-PiP נסגר (בין אם דרך X ובין אם הגדלה)
+    override fun onPictureInPictureModeChanged(isInPictureInPictureMode: Boolean, newConfig: Configuration) {
+        super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
+        if (!isInPictureInPictureMode) {
+            isExitingPip = true
+        }
+    }
+
+    // אם המשתמש הגדיל חזרה למסך מלא - מבטלים את הדגל כדי שהאפליקציה לא תיסגר
+    override fun onStart() {
+        super.onStart()
+        isExitingPip = false
+    }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        AudioPlaybackService.stopService(this)
     }
 }

@@ -76,11 +76,13 @@ class AudioPlaybackService : Service() {
 
     override fun onTaskRemoved(rootIntent: Intent?) {
         super.onTaskRemoved(rootIntent)
+        stopForeground(true) // Added to forcibly remove the notification
         stopSelf()
     }
 
     override fun onDestroy() {
         super.onDestroy()
+        stopForeground(true) // Added to forcibly remove the notification
         mediaSession?.isActive = false
         mediaSession?.release()
     }
