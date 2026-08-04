@@ -21,7 +21,6 @@ class MainActivity : ComponentActivity() {
 
     var isPipEnabled = false
 
-    // החזרנו את המשתנה הקריטי שבודק אם אנחנו יוצאים מ-PiP
     var isExitingPip = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -47,7 +46,6 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    // תופס את הרגע המדויק שבו ה-PiP נסגר (בין אם דרך X ובין אם הגדלה)
     override fun onPictureInPictureModeChanged(isInPictureInPictureMode: Boolean, newConfig: Configuration) {
         super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
         if (!isInPictureInPictureMode) {
@@ -55,7 +53,6 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    // אם המשתמש הגדיל חזרה למסך מלא - מבטלים את הדגל כדי שהאפליקציה לא תיסגר
     override fun onStart() {
         super.onStart()
         isExitingPip = false

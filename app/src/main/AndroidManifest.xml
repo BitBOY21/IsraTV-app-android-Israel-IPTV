@@ -7,7 +7,7 @@
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" />
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" />
 
-    <!-- הרשאות לנגינת אודיו ברקע (Foreground Service) והתראות -->
+    <!-- Permissions for background audio playback (Foreground Service) and notifications -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
@@ -46,7 +46,7 @@
             </intent-filter>
         </activity>
 
-        <!-- רישום שירות נגינת הרקע -->
+        <!-- Register background playback service -->
         <service
                 android:name=".services.AudioPlaybackService"
                 android:foregroundServiceType="mediaPlayback"
