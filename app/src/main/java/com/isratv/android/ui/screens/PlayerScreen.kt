@@ -44,6 +44,8 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import com.isratv.android.MainActivity
+import com.isratv.android.services.AudioPlaybackService
+import com.google.android.exoplayer2.C
 import com.google.android.exoplayer2.ExoPlayer
 import com.google.android.exoplayer2.MediaItem
 import com.google.android.exoplayer2.Player
@@ -54,11 +56,11 @@ import com.google.android.exoplayer2.upstream.DefaultHttpDataSource
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-// --- Constants for PiP actions ---
-private const val ACTION_MEDIA_CONTROL = "media_control"
+private const val ACTION_MEDIA_CONTROL = "com.isratv.android.MEDIA_CONTROL"
 private const val EXTRA_CONTROL_TYPE = "control_type"
 private const val CONTROL_TYPE_PLAY = 1
 private const val CONTROL_TYPE_PAUSE = 2
+private const val CONTROL_TYPE_HEADPHONES = 3
 
 @Composable
 fun PlayerScreen(
@@ -72,33 +74,35 @@ fun PlayerScreen(
     val view = LocalView.current
     val window = activity?.window
 
-    // Scope for asynchronous operations (like delay on exit)
     val scope = rememberCoroutineScope()
-
     val configuration = LocalConfiguration.current
 
-    // --- Immersive Mode Effect & Default Portrait ---
+    var isAudioOnly by rememberSaveable { mutableStateOf(false) }
+
+    DisposableEffect(Unit) {
+        AudioPlaybackService.startService(context, channelName, true)
+
+        onDispose {
+            AudioPlaybackService.stopService(context)
+        }
+    }
+
     DisposableEffect(Unit) {
         val windowInsetsController = window?.let { WindowCompat.getInsetsController(it, view) }
 
-        // Enter immersive mode
         window?.let { WindowCompat.setDecorFitsSystemWindows(it, false) }
         windowInsetsController?.hide(WindowInsetsCompat.Type.systemBars())
         windowInsetsController?.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
 
-        // Force PORTRAIT when entering the screen
         activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
 
         onDispose {
-            // Exit immersive mode
             window?.let { WindowCompat.setDecorFitsSystemWindows(it, true) }
             windowInsetsController?.show(WindowInsetsCompat.Type.systemBars())
-            // Restore default orientation
             activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
         }
     }
 
-    // Manage PiP flag
     DisposableEffect(Unit) {
         mainActivity?.isPipEnabled = true
         onDispose {
@@ -106,7 +110,6 @@ fun PlayerScreen(
         }
     }
 
-    // Keep screen on while watching
     DisposableEffect(Unit) {
         activity?.window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         onDispose {
@@ -135,30 +138,83 @@ fun PlayerScreen(
             .build()
     }
 
-    // --- Function to update PiP action buttons ---
-    fun updatePipActions(isPlaying: Boolean) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val iconId = if (isPlaying) android.R.drawable.ic_media_pause else android.R.drawable.ic_media_play
-            val title = if (isPlaying) "Pause" else "Play"
-            val controlType = if (isPlaying) CONTROL_TYPE_PAUSE else CONTROL_TYPE_PAUSE // Note: Fixed control type logic if needed, but keeping as was
+    // חיבור הנגן להאזנה ישירה של כפתורי הפלט מדיה
+    DisposableEffect(exoPlayer) {
+        AudioPlaybackService.mediaControlListener = object : AudioPlaybackService.MediaControlListener {
+            override fun onPlay() {
+                exoPlayer.play()
+            }
+            override fun onPause() {
+                exoPlayer.pause()
+            }
+        }
 
-            val intent = Intent(ACTION_MEDIA_CONTROL).apply {
-                putExtra(EXTRA_CONTROL_TYPE, controlType)
+        onDispose {
+            AudioPlaybackService.mediaControlListener = null
+        }
+    }
+
+    fun toggleAudioOnlyMode(enableAudioOnly: Boolean) {
+        isAudioOnly = enableAudioOnly
+        val parameters = exoPlayer.trackSelectionParameters
+            .buildUpon()
+            .setTrackTypeDisabled(C.TRACK_TYPE_VIDEO, enableAudioOnly)
+            .build()
+        exoPlayer.trackSelectionParameters = parameters
+
+        if (enableAudioOnly) {
+            activity?.moveTaskToBack(true)
+        }
+    }
+
+    fun updatePipActions(isPlaying: Boolean, audioOnly: Boolean) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val actions = mutableListOf<RemoteAction>()
+
+            val headphonesIntent = Intent(ACTION_MEDIA_CONTROL).apply {
+                putExtra(EXTRA_CONTROL_TYPE, CONTROL_TYPE_HEADPHONES)
                 setPackage(context.packageName)
             }
-
-            val pendingIntent = PendingIntent.getBroadcast(
+            val headphonesPendingIntent = PendingIntent.getBroadcast(
                 context,
-                controlType,
-                intent,
+                CONTROL_TYPE_HEADPHONES,
+                headphonesIntent,
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
+            actions.add(
+                RemoteAction(
+                    Icon.createWithResource(context, android.R.drawable.stat_sys_headset),
+                    "Audio Only",
+                    "Audio Only",
+                    headphonesPendingIntent
+                )
+            )
 
-            val icon = Icon.createWithResource(context, iconId)
-            val action = RemoteAction(icon, title, title, pendingIntent)
+            val playPauseIconId = if (isPlaying) android.R.drawable.ic_media_pause else android.R.drawable.ic_media_play
+            val playPauseTitle = if (isPlaying) "Pause" else "Play"
+            val playPauseControlType = if (isPlaying) CONTROL_TYPE_PAUSE else CONTROL_TYPE_PLAY
+
+            val playPauseIntent = Intent(ACTION_MEDIA_CONTROL).apply {
+                putExtra(EXTRA_CONTROL_TYPE, playPauseControlType)
+                setPackage(context.packageName)
+            }
+            val playPausePendingIntent = PendingIntent.getBroadcast(
+                context,
+                playPauseControlType,
+                playPauseIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            actions.add(
+                RemoteAction(
+                    Icon.createWithResource(context, playPauseIconId),
+                    playPauseTitle,
+                    playPauseTitle,
+                    playPausePendingIntent
+                )
+            )
 
             val params = PictureInPictureParams.Builder()
-                .setActions(listOf(action))
+                .setActions(actions)
                 .setAspectRatio(Rational(16, 9))
                 .build()
 
@@ -166,20 +222,21 @@ fun PlayerScreen(
         }
     }
 
-    // --- BroadcastReceiver to handle PiP actions ---
+    // ה-Broadcast Receiver הזה ממשיך לטפל בכפתורים שבחלון ה-PiP הצף
     DisposableEffect(Unit) {
         val receiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context?, intent: Intent?) {
                 if (intent?.action == ACTION_MEDIA_CONTROL) {
-                    val type = intent.getIntExtra(EXTRA_CONTROL_TYPE, 0)
-                    when (type) {
+                    when (intent.getIntExtra(EXTRA_CONTROL_TYPE, 0)) {
                         CONTROL_TYPE_PLAY -> {
                             exoPlayer.play()
-                            updatePipActions(true)
                         }
                         CONTROL_TYPE_PAUSE -> {
                             exoPlayer.pause()
-                            updatePipActions(false)
+                        }
+                        CONTROL_TYPE_HEADPHONES -> {
+                            toggleAudioOnlyMode(!isAudioOnly)
+                            updatePipActions(exoPlayer.isPlaying, !isAudioOnly)
                         }
                     }
                 }
@@ -198,20 +255,23 @@ fun PlayerScreen(
         }
     }
 
-    // --- Improved cleanup v2 (Fixes sound issue in PiP) ---
     val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
 
     DisposableEffect(lifecycleOwner) {
         val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
-            if (event == androidx.lifecycle.Lifecycle.Event.ON_STOP) {
-                val isChangingConfigurations = activity?.isChangingConfigurations == true
-                if (!isChangingConfigurations && !isInPipMode) {
-                    exoPlayer.pause()
-                    exoPlayer.release()
-                } else if (!isChangingConfigurations && isInPipMode) {
-                    exoPlayer.pause()
-                    exoPlayer.release()
+            when (event) {
+                androidx.lifecycle.Lifecycle.Event.ON_START -> {
+                    if (isAudioOnly) {
+                        toggleAudioOnlyMode(false)
+                    }
                 }
+                androidx.lifecycle.Lifecycle.Event.ON_STOP -> {
+                    if (activity?.isFinishing == true) {
+                        exoPlayer.pause()
+                        AudioPlaybackService.stopService(context)
+                    }
+                }
+                else -> {}
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
@@ -229,6 +289,7 @@ fun PlayerScreen(
             try {
                 isPlayerVisible = false
                 exoPlayer.pause()
+                AudioPlaybackService.stopService(context)
                 delay(50)
             } catch (e: Exception) {
                 e.printStackTrace()
@@ -244,11 +305,8 @@ fun PlayerScreen(
     var isPlaying by rememberSaveable { mutableStateOf(true) }
     var isBuffering by remember { mutableStateOf(true) }
     var areControlsVisible by rememberSaveable { mutableStateOf(true) }
-
-    // States for new features
     var isMuted by rememberSaveable { mutableStateOf(false) }
 
-    // Apply mute state to player
     LaunchedEffect(isMuted) {
         exoPlayer.volume = if (isMuted) 0f else 1f
     }
@@ -259,11 +317,13 @@ fun PlayerScreen(
                 isBuffering = playbackState == Player.STATE_BUFFERING
                 val isNowPlaying = playbackState == Player.STATE_READY && exoPlayer.playWhenReady
                 isPlaying = isNowPlaying
-                updatePipActions(isNowPlaying)
+                updatePipActions(isNowPlaying, isAudioOnly)
+                AudioPlaybackService.updatePlaybackState(context, isNowPlaying)
             }
             override fun onIsPlayingChanged(isPlayingState: Boolean) {
                 isPlaying = isPlayingState
-                updatePipActions(isPlayingState)
+                updatePipActions(isPlayingState, isAudioOnly)
+                AudioPlaybackService.updatePlaybackState(context, isPlayingState)
             }
         }
         exoPlayer.addListener(listener)
@@ -288,7 +348,7 @@ fun PlayerScreen(
 
     fun enterPipMode() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            updatePipActions(exoPlayer.isPlaying)
+            updatePipActions(exoPlayer.isPlaying, isAudioOnly)
             val params = PictureInPictureParams.Builder()
                 .setAspectRatio(Rational(16, 9))
                 .build()
@@ -361,9 +421,19 @@ fun PlayerScreen(
                         )
                     }
 
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                        IconButton(onClick = { enterPipMode() }) {
-                            Icon(Icons.Filled.PictureInPictureAlt, "PiP", tint = Color.White)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        IconButton(onClick = { toggleAudioOnlyMode(!isAudioOnly) }) {
+                            Icon(
+                                imageVector = Icons.Filled.Headphones,
+                                contentDescription = "Audio Only",
+                                tint = if (isAudioOnly) Color.Green else Color.White
+                            )
+                        }
+
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                            IconButton(onClick = { enterPipMode() }) {
+                                Icon(Icons.Filled.PictureInPictureAlt, "PiP", tint = Color.White)
+                            }
                         }
                     }
                 }
@@ -429,9 +499,7 @@ fun PlayerScreen(
                         }
                     }
 
-                    // New Row for Mute and Rotation Buttons
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        // Mute Button
                         IconButton(onClick = { isMuted = !isMuted }) {
                             Icon(
                                 imageVector = if (isMuted) Icons.Filled.VolumeOff else Icons.Filled.VolumeUp,
@@ -440,7 +508,6 @@ fun PlayerScreen(
                             )
                         }
 
-                        // Screen Rotation Toggle Button
                         IconButton(onClick = {
                             val currentOrientation = activity?.requestedOrientation
                             if (currentOrientation == ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE ||

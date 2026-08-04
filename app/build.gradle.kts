@@ -61,7 +61,7 @@ dependencies {
     implementation(libs.hilt.android)
     ksp(libs.hilt.compiler)
     implementation(libs.androidx.hilt.navigationCompose)
-    
+
     // Coil for image loading
     implementation(libs.coil.compose)
 
@@ -72,10 +72,12 @@ dependencies {
 
     // DataStore
     implementation(libs.androidx.datastore.preferences)
-    
+
     // Pull Refresh for Material 3
     implementation("androidx.compose.material3:material3:1.3.0")
 
+    // === התוספת שלנו לפלט המדיה ===
+    implementation("androidx.media:media:1.7.0")
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.junit)
