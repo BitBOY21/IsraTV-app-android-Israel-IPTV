@@ -1,5 +1,6 @@
 package com.isratv.android.ui.screens
 
+import com.isratv.android.R
 import android.app.Activity
 import android.app.PendingIntent
 import android.app.PictureInPictureParams
@@ -171,26 +172,8 @@ fun PlayerScreen(
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val actions = mutableListOf<RemoteAction>()
 
-            val headphonesIntent = Intent(ACTION_MEDIA_CONTROL).apply {
-                putExtra(EXTRA_CONTROL_TYPE, CONTROL_TYPE_HEADPHONES)
-                setPackage(context.packageName)
-            }
-            val headphonesPendingIntent = PendingIntent.getBroadcast(
-                context,
-                CONTROL_TYPE_HEADPHONES,
-                headphonesIntent,
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-            )
-            actions.add(
-                RemoteAction(
-                    Icon.createWithResource(context, android.R.drawable.stat_sys_headset),
-                    "Audio Only",
-                    "Audio Only",
-                    headphonesPendingIntent
-                )
-            )
-
-            val playPauseIconId = if (isPlaying) android.R.drawable.ic_media_pause else android.R.drawable.ic_media_play
+            // 1. כפתור Play / Pause
+            val playPauseIconId = if (isPlaying) R.drawable.ic_pause else R.drawable.ic_play
             val playPauseTitle = if (isPlaying) "Pause" else "Play"
             val playPauseControlType = if (isPlaying) CONTROL_TYPE_PAUSE else CONTROL_TYPE_PLAY
 
@@ -204,14 +187,63 @@ fun PlayerScreen(
                 playPauseIntent,
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
-            actions.add(
-                RemoteAction(
-                    Icon.createWithResource(context, playPauseIconId),
-                    playPauseTitle,
-                    playPauseTitle,
-                    playPausePendingIntent
-                )
+            val playPauseAction = RemoteAction(
+                Icon.createWithResource(context, playPauseIconId),
+                playPauseTitle,
+                playPauseTitle,
+                playPausePendingIntent
             )
+
+            // 2. כפתור האזנה (Headphones)
+            val headphonesIntent = Intent(ACTION_MEDIA_CONTROL).apply {
+                putExtra(EXTRA_CONTROL_TYPE, CONTROL_TYPE_HEADPHONES)
+                setPackage(context.packageName)
+            }
+            val headphonesPendingIntent = PendingIntent.getBroadcast(
+                context,
+                CONTROL_TYPE_HEADPHONES,
+                headphonesIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            val headphonesAction = RemoteAction(
+                Icon.createWithResource(context, R.drawable.ic_headphones),
+                "Audio Only",
+                "Audio Only",
+                headphonesPendingIntent
+            )
+
+            // 3. כפתור רווח שקוף (Placeholder) שנועד לאזן את המרחב ולדחוף את הכפתורים למרכז/שמאל בצורה מושלמת
+            val emptyIntent = Intent("com.isratv.android.EMPTY_ACTION").apply {
+                setPackage(context.packageName)
+            }
+            val emptyPendingIntent = PendingIntent.getBroadcast(
+                context,
+                999,
+                emptyIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            // שימוש באייקון שקוף או מינימלי שלא יפריע בעין, או בפעולה ריקה
+            val spacerAction = RemoteAction(
+                Icon.createWithResource(context, android.R.color.transparent),
+                "",
+                "",
+                emptyPendingIntent
+            )
+
+            // סידור 3 הרכיבים כך שנוצר רווח מאזן:
+            // סדר: [אוזניות] -> [פאוז/פליי] -> [מרווח שקוף]
+            // זה מאלץ את אנדרואיד לפרוס אותם על פני הרוחב ולמקם את הפאוז במרכז יחסי מצוין.
+            val isRtl = context.resources.configuration.layoutDirection == android.view.View.LAYOUT_DIRECTION_RTL
+
+            if (isRtl) {
+                actions.add(spacerAction)
+                actions.add(playPauseAction)
+                actions.add(headphonesAction)
+            } else {
+                actions.add(headphonesAction)
+                actions.add(playPauseAction)
+                actions.add(spacerAction)
+            }
 
             val params = PictureInPictureParams.Builder()
                 .setActions(actions)
