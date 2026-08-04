@@ -1,13 +1,16 @@
 <div align="center">
-  <img src="screenshots/icon_channels.png" alt="IsraTV Logo" width="128" height="128"><br>
+  <img src="screenshots/icon_channels.png" alt="IsraTV Logo" width="100" height="100"><br>
+  <font size="6"><b>IsraTV</b></font><br>
 </div>
 
-**IsraTV** is a modern Android application for streaming Israeli TV channels in real-time, built with Jetpack Compose. This app provides a smooth, fast, and personalized viewing experience.
+---
+A modern Android application for streaming Israeli TV channels in real-time, built with **Jetpack Compose**. This app provides a smooth, fast, and personalized viewing experience.
 
 ## Key Features
 * **Modern UI:** High-performance interface built with Jetpack Compose.
 * **Favorites:** Save channels to a personal list via local **Room DB**.
 * **Picture-in-Picture (PiP):** Watch in a floating window while using other apps.
+* **Background Audio / Audio-Only:** Enjoy seamless continuous listening with dedicated background audio playback.
 * **Smart Search:** Find channels instantly by name.
 * **Advanced Player:** Optimized HLS streaming powered by **ExoPlayer**.
 * **Auto-Updates:** Automatically checks for and installs new versions within the app.

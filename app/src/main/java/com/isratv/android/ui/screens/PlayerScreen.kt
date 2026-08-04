@@ -1,5 +1,6 @@
 package com.isratv.android.ui.screens
 
+import com.isratv.android.R
 import android.app.Activity
 import android.app.PendingIntent
 import android.app.PictureInPictureParams
@@ -44,6 +45,8 @@ import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import com.isratv.android.MainActivity
+import com.isratv.android.services.AudioPlaybackService
+import com.google.android.exoplayer2.C
 import com.google.android.exoplayer2.ExoPlayer
 import com.google.android.exoplayer2.MediaItem
 import com.google.android.exoplayer2.Player
@@ -54,11 +57,11 @@ import com.google.android.exoplayer2.upstream.DefaultHttpDataSource
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-// --- Constants for PiP actions ---
-private const val ACTION_MEDIA_CONTROL = "media_control"
+private const val ACTION_MEDIA_CONTROL = "com.isratv.android.MEDIA_CONTROL"
 private const val EXTRA_CONTROL_TYPE = "control_type"
 private const val CONTROL_TYPE_PLAY = 1
 private const val CONTROL_TYPE_PAUSE = 2
+private const val CONTROL_TYPE_HEADPHONES = 3
 
 @Composable
 fun PlayerScreen(
@@ -72,45 +75,39 @@ fun PlayerScreen(
     val view = LocalView.current
     val window = activity?.window
 
-    // Scope for asynchronous operations (like delay on exit)
     val scope = rememberCoroutineScope()
-
     val configuration = LocalConfiguration.current
 
-    // Manage PiP flag
+    var isAudioOnly by rememberSaveable { mutableStateOf(false) }
+
+    DisposableEffect(Unit) {
+        AudioPlaybackService.startService(context, channelName, true)
+        onDispose {
+            AudioPlaybackService.stopService(context)
+        }
+    }
+
+    DisposableEffect(Unit) {
+        val windowInsetsController = window?.let { WindowCompat.getInsetsController(it, view) }
+
+        windowInsetsController?.hide(WindowInsetsCompat.Type.systemBars())
+        windowInsetsController?.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+
+        activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+
+        onDispose {
+            windowInsetsController?.show(WindowInsetsCompat.Type.systemBars())
+            activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+        }
+    }
+
     DisposableEffect(Unit) {
         mainActivity?.isPipEnabled = true
         onDispose {
             mainActivity?.isPipEnabled = false
-            activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
-            window?.let {
-                WindowCompat.getInsetsController(it, view).show(WindowInsetsCompat.Type.systemBars())
-            }
         }
     }
 
-    var isFullscreen by rememberSaveable { mutableStateOf(false) }
-
-    // Fullscreen and System UI management
-    DisposableEffect(isFullscreen) {
-        val windowInsetsController = window?.let { WindowCompat.getInsetsController(it, view) }
-
-        if (isFullscreen) {
-            windowInsetsController?.hide(WindowInsetsCompat.Type.systemBars())
-            windowInsetsController?.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-            activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
-        } else {
-            windowInsetsController?.show(WindowInsetsCompat.Type.systemBars())
-            activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
-        }
-
-        onDispose {
-            windowInsetsController?.show(WindowInsetsCompat.Type.systemBars())
-            activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
-        }
-    }
-
-    // Keep screen on while watching
     DisposableEffect(Unit) {
         activity?.window?.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         onDispose {
@@ -128,41 +125,117 @@ fun PlayerScreen(
 
     val exoPlayer = remember {
         val userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-        val headers = mapOf("Referer" to "https://www.mako.co.il/", "Origin" to "https://www.mako.co.il")
-        val dataSourceFactory = DefaultHttpDataSource.Factory()
+        val httpDataSourceFactory = DefaultHttpDataSource.Factory()
             .setUserAgent(userAgent)
-            .setDefaultRequestProperties(headers)
             .setAllowCrossProtocolRedirects(true)
 
+        val hlsMediaSourceFactory = HlsMediaSource.Factory(httpDataSourceFactory)
+
         ExoPlayer.Builder(context)
-            .setMediaSourceFactory(HlsMediaSource.Factory(dataSourceFactory))
+            .setMediaSourceFactory(hlsMediaSourceFactory)
             .build()
     }
 
-    // --- Function to update PiP action buttons ---
-    fun updatePipActions(isPlaying: Boolean) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            val iconId = if (isPlaying) android.R.drawable.ic_media_pause else android.R.drawable.ic_media_play
-            val title = if (isPlaying) "Pause" else "Play"
-            val controlType = if (isPlaying) CONTROL_TYPE_PAUSE else CONTROL_TYPE_PLAY
+    DisposableEffect(exoPlayer) {
+        AudioPlaybackService.mediaControlListener = object : AudioPlaybackService.MediaControlListener {
+            override fun onPlay() {
+                exoPlayer.play()
+            }
+            override fun onPause() {
+                exoPlayer.pause()
+            }
+        }
 
-            val intent = Intent(ACTION_MEDIA_CONTROL).apply {
-                putExtra(EXTRA_CONTROL_TYPE, controlType)
+        onDispose {
+            AudioPlaybackService.mediaControlListener = null
+        }
+    }
+
+    fun toggleAudioOnlyMode(enableAudioOnly: Boolean) {
+        isAudioOnly = enableAudioOnly
+        val parameters = exoPlayer.trackSelectionParameters
+            .buildUpon()
+            .setTrackTypeDisabled(C.TRACK_TYPE_VIDEO, enableAudioOnly)
+            .build()
+        exoPlayer.trackSelectionParameters = parameters
+
+        if (enableAudioOnly) {
+            activity?.moveTaskToBack(true)
+        }
+    }
+
+    fun updatePipActions(isPlaying: Boolean, audioOnly: Boolean) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val actions = mutableListOf<RemoteAction>()
+
+            val playPauseIconId = if (isPlaying) R.drawable.ic_pause else R.drawable.ic_play
+            val playPauseTitle = if (isPlaying) "Pause" else "Play"
+            val playPauseControlType = if (isPlaying) CONTROL_TYPE_PAUSE else CONTROL_TYPE_PLAY
+
+            val playPauseIntent = Intent(ACTION_MEDIA_CONTROL).apply {
+                putExtra(EXTRA_CONTROL_TYPE, playPauseControlType)
                 setPackage(context.packageName)
             }
-
-            val pendingIntent = PendingIntent.getBroadcast(
+            val playPausePendingIntent = PendingIntent.getBroadcast(
                 context,
-                controlType,
-                intent,
+                playPauseControlType,
+                playPauseIntent,
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
+            val playPauseAction = RemoteAction(
+                Icon.createWithResource(context, playPauseIconId),
+                playPauseTitle,
+                playPauseTitle,
+                playPausePendingIntent
+            )
 
-            val icon = Icon.createWithResource(context, iconId)
-            val action = RemoteAction(icon, title, title, pendingIntent)
+            val headphonesIntent = Intent(ACTION_MEDIA_CONTROL).apply {
+                putExtra(EXTRA_CONTROL_TYPE, CONTROL_TYPE_HEADPHONES)
+                setPackage(context.packageName)
+            }
+            val headphonesPendingIntent = PendingIntent.getBroadcast(
+                context,
+                CONTROL_TYPE_HEADPHONES,
+                headphonesIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            val headphonesAction = RemoteAction(
+                Icon.createWithResource(context, R.drawable.ic_headphones),
+                "Audio Only",
+                "Audio Only",
+                headphonesPendingIntent
+            )
+
+            val emptyIntent = Intent("com.isratv.android.EMPTY_ACTION").apply {
+                setPackage(context.packageName)
+            }
+            val emptyPendingIntent = PendingIntent.getBroadcast(
+                context,
+                999,
+                emptyIntent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+            val spacerAction = RemoteAction(
+                Icon.createWithResource(context, android.R.color.transparent),
+                "",
+                "",
+                emptyPendingIntent
+            )
+
+            val isRtl = context.resources.configuration.layoutDirection == android.view.View.LAYOUT_DIRECTION_RTL
+
+            if (isRtl) {
+                actions.add(spacerAction)
+                actions.add(playPauseAction)
+                actions.add(headphonesAction)
+            } else {
+                actions.add(headphonesAction)
+                actions.add(playPauseAction)
+                actions.add(spacerAction)
+            }
 
             val params = PictureInPictureParams.Builder()
-                .setActions(listOf(action))
+                .setActions(actions)
                 .setAspectRatio(Rational(16, 9))
                 .build()
 
@@ -170,20 +243,16 @@ fun PlayerScreen(
         }
     }
 
-    // --- BroadcastReceiver to handle PiP actions ---
     DisposableEffect(Unit) {
         val receiver = object : BroadcastReceiver() {
             override fun onReceive(context: Context?, intent: Intent?) {
                 if (intent?.action == ACTION_MEDIA_CONTROL) {
-                    val type = intent.getIntExtra(EXTRA_CONTROL_TYPE, 0)
-                    when (type) {
-                        CONTROL_TYPE_PLAY -> {
-                            exoPlayer.play()
-                            updatePipActions(true)
-                        }
-                        CONTROL_TYPE_PAUSE -> {
-                            exoPlayer.pause()
-                            updatePipActions(false)
+                    when (intent.getIntExtra(EXTRA_CONTROL_TYPE, 0)) {
+                        CONTROL_TYPE_PLAY -> { exoPlayer.play() }
+                        CONTROL_TYPE_PAUSE -> { exoPlayer.pause() }
+                        CONTROL_TYPE_HEADPHONES -> {
+                            toggleAudioOnlyMode(!isAudioOnly)
+                            updatePipActions(exoPlayer.isPlaying, !isAudioOnly)
                         }
                     }
                 }
@@ -192,7 +261,6 @@ fun PlayerScreen(
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val filter = IntentFilter(ACTION_MEDIA_CONTROL)
-            // Use ContextCompat for safer registration
             ContextCompat.registerReceiver(context, receiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
         }
 
@@ -203,76 +271,71 @@ fun PlayerScreen(
         }
     }
 
-    // --- Improved cleanup v2 (Fixes sound issue in PiP) ---
     val lifecycleOwner = androidx.lifecycle.compose.LocalLifecycleOwner.current
 
     DisposableEffect(lifecycleOwner) {
         val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
-            // Change to ON_STOP: Catches closure faster and more safely
-            if (event == androidx.lifecycle.Lifecycle.Event.ON_STOP) {
-                // Check if the user is not just rotating the screen
-                val isChangingConfigurations = activity?.isChangingConfigurations == true
-                if (!isChangingConfigurations && !isInPipMode) {
-                    exoPlayer.pause()
-                    exoPlayer.release()
-                } else if (!isChangingConfigurations && isInPipMode) {
-                    // If we are in PiP and the app goes to Stop (happens when closing the floating window)
-                    exoPlayer.pause()
-                    exoPlayer.release()
+            when (event) {
+                androidx.lifecycle.Lifecycle.Event.ON_START -> {
+                    if (isAudioOnly) {
+                        toggleAudioOnlyMode(false)
+                    }
                 }
+                androidx.lifecycle.Lifecycle.Event.ON_STOP -> {
+                    if (!isAudioOnly) {
+                        exoPlayer.pause()
+
+                        if (mainActivity?.isExitingPip == true) {
+                            AudioPlaybackService.stopService(context)
+                            activity?.finishAndRemoveTask()
+                        }
+                    }
+                }
+                else -> {}
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
 
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(observer)
+            exoPlayer.pause()
             exoPlayer.release()
+            AudioPlaybackService.stopService(context)
         }
     }
 
-    // Variable controlling player visibility - key to fixing the issue
     var isPlayerVisible by remember { mutableStateOf(true) }
 
-    // --- Improved safe exit function ---
     fun safeExit() {
         scope.launch {
             try {
-                // 1. Hide the player immediately - detaches the SurfaceView
                 isPlayerVisible = false
-
-                // 2. Stop the player
                 exoPlayer.pause()
+                AudioPlaybackService.stopService(context)
 
-                // 3. Return orientation to portrait
-                activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+                val windowInsetsController = window?.let { WindowCompat.getInsetsController(it, view) }
+                windowInsetsController?.show(WindowInsetsCompat.Type.systemBars())
 
-                // 4. Restore System Bars
-                window?.let {
-                    WindowCompat.getInsetsController(it, view).show(WindowInsetsCompat.Type.systemBars())
-                }
-
-                // 5. Short delay to let the UI update and remove the black "hole"
                 delay(50)
-
             } catch (e: Exception) {
                 e.printStackTrace()
             }
-            // 6. Only now - navigate out
             onBack()
         }
     }
 
     BackHandler(enabled = true) {
-        if (isFullscreen) {
-            isFullscreen = false
-        } else {
-            safeExit()
-        }
+        safeExit()
     }
 
     var isPlaying by rememberSaveable { mutableStateOf(true) }
     var isBuffering by remember { mutableStateOf(true) }
     var areControlsVisible by rememberSaveable { mutableStateOf(true) }
+    var isMuted by rememberSaveable { mutableStateOf(false) }
+
+    LaunchedEffect(isMuted) {
+        exoPlayer.volume = if (isMuted) 0f else 1f
+    }
 
     DisposableEffect(exoPlayer) {
         val listener = object : Player.Listener {
@@ -280,13 +343,19 @@ fun PlayerScreen(
                 isBuffering = playbackState == Player.STATE_BUFFERING
                 val isNowPlaying = playbackState == Player.STATE_READY && exoPlayer.playWhenReady
                 isPlaying = isNowPlaying
-                // Update PiP button when playback state changes
-                updatePipActions(isNowPlaying)
+                updatePipActions(isNowPlaying, isAudioOnly)
+
+                if (activity?.isFinishing != true) {
+                    AudioPlaybackService.updatePlaybackState(context, isNowPlaying)
+                }
             }
             override fun onIsPlayingChanged(isPlayingState: Boolean) {
                 isPlaying = isPlayingState
-                // Update PiP button when playback state changes
-                updatePipActions(isPlayingState)
+                updatePipActions(isPlayingState, isAudioOnly)
+
+                if (activity?.isFinishing != true) {
+                    AudioPlaybackService.updatePlaybackState(context, isPlayingState)
+                }
             }
         }
         exoPlayer.addListener(listener)
@@ -311,9 +380,7 @@ fun PlayerScreen(
 
     fun enterPipMode() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            // Update buttons just before entering
-            updatePipActions(exoPlayer.isPlaying)
-
+            updatePipActions(exoPlayer.isPlaying, isAudioOnly)
             val params = PictureInPictureParams.Builder()
                 .setAspectRatio(Rational(16, 9))
                 .build()
@@ -333,8 +400,6 @@ fun PlayerScreen(
             },
         contentAlignment = Alignment.Center
     ) {
-        // We wrap the player in a condition. When the user exits, this becomes false,
-        // the player is destroyed (onRelease is called), the SurfaceView disappears, and only then we navigate.
         if (isPlayerVisible) {
             AndroidView(
                 modifier = Modifier.fillMaxSize(),
@@ -362,7 +427,6 @@ fun PlayerScreen(
         }
 
         if (!isInPipMode && isPlayerVisible) {
-            // Top controls
             AnimatedVisibility(
                 visible = areControlsVisible,
                 enter = fadeIn(),
@@ -389,15 +453,24 @@ fun PlayerScreen(
                         )
                     }
 
-                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-                        IconButton(onClick = { enterPipMode() }) {
-                            Icon(Icons.Filled.PictureInPictureAlt, "PiP", tint = Color.White)
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        IconButton(onClick = { toggleAudioOnlyMode(!isAudioOnly) }) {
+                            Icon(
+                                imageVector = Icons.Filled.Headphones,
+                                contentDescription = "Audio Only",
+                                tint = if (isAudioOnly) Color.Green else Color.White
+                            )
+                        }
+
+                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                            IconButton(onClick = { enterPipMode() }) {
+                                Icon(Icons.Filled.PictureInPictureAlt, "PiP", tint = Color.White)
+                            }
                         }
                     }
                 }
             }
 
-            // Play/Pause button (Center)
             AnimatedVisibility(
                 visible = areControlsVisible && !isBuffering,
                 enter = fadeIn(),
@@ -410,14 +483,13 @@ fun PlayerScreen(
                 ) {
                     Icon(
                         imageVector = if (isPlaying) Icons.Filled.Pause else Icons.Filled.PlayArrow,
-                        contentDescription = "Play/Pause",
+                        contentDescription = "Play/Progress",
                         tint = Color.White,
                         modifier = Modifier.size(48.dp)
                     )
                 }
             }
 
-            // Bottom controls
             AnimatedVisibility(
                 visible = areControlsVisible,
                 enter = fadeIn(),
@@ -459,12 +531,30 @@ fun PlayerScreen(
                         }
                     }
 
-                    IconButton(onClick = { isFullscreen = !isFullscreen }) {
-                        Icon(
-                            imageVector = if (isFullscreen) Icons.Filled.FullscreenExit else Icons.Filled.Fullscreen,
-                            contentDescription = if (isFullscreen) "Exit Fullscreen" else "Fullscreen",
-                            tint = Color.White
-                        )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        IconButton(onClick = { isMuted = !isMuted }) {
+                            Icon(
+                                imageVector = if (isMuted) Icons.Filled.VolumeOff else Icons.Filled.VolumeUp,
+                                contentDescription = if (isMuted) "Unmute" else "Mute",
+                                tint = Color.White
+                            )
+                        }
+
+                        IconButton(onClick = {
+                            val currentOrientation = activity?.requestedOrientation
+                            if (currentOrientation == ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE ||
+                                currentOrientation == ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE) {
+                                activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+                            } else {
+                                activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                            }
+                        }) {
+                            Icon(
+                                imageVector = Icons.Filled.ScreenRotation,
+                                contentDescription = "Rotate Screen",
+                                tint = Color.White
+                            )
+                        }
                     }
                 }
             }
