@@ -90,14 +90,12 @@ fun PlayerScreen(
     DisposableEffect(Unit) {
         val windowInsetsController = window?.let { WindowCompat.getInsetsController(it, view) }
 
-        window?.let { WindowCompat.setDecorFitsSystemWindows(it, false) }
         windowInsetsController?.hide(WindowInsetsCompat.Type.systemBars())
         windowInsetsController?.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
 
         activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
 
         onDispose {
-            window?.let { WindowCompat.setDecorFitsSystemWindows(it, true) }
             windowInsetsController?.show(WindowInsetsCompat.Type.systemBars())
             activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
         }
@@ -285,11 +283,8 @@ fun PlayerScreen(
                 }
                 androidx.lifecycle.Lifecycle.Event.ON_STOP -> {
                     if (!isAudioOnly) {
-                        // בכל מקרה משהים את הנגן כשמסך נעלם מהעין
                         exoPlayer.pause()
 
-                        // התיקון הקריטי: מוודאים שסוגרים לחלוטין את האפליקציה *אך ורק*
-                        // אם הסיבה שאנחנו ב-ON_STOP היא בגלל סגירת ה-X ב-PiP!
                         if (mainActivity?.isExitingPip == true) {
                             AudioPlaybackService.stopService(context)
                             activity?.finishAndRemoveTask()
@@ -317,6 +312,10 @@ fun PlayerScreen(
                 isPlayerVisible = false
                 exoPlayer.pause()
                 AudioPlaybackService.stopService(context)
+
+                val windowInsetsController = window?.let { WindowCompat.getInsetsController(it, view) }
+                windowInsetsController?.show(WindowInsetsCompat.Type.systemBars())
+
                 delay(50)
             } catch (e: Exception) {
                 e.printStackTrace()
