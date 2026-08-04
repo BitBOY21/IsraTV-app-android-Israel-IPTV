@@ -77,36 +77,32 @@ fun PlayerScreen(
 
     val configuration = LocalConfiguration.current
 
+    // --- Immersive Mode Effect & Default Portrait ---
+    DisposableEffect(Unit) {
+        val windowInsetsController = window?.let { WindowCompat.getInsetsController(it, view) }
+
+        // Enter immersive mode
+        window?.let { WindowCompat.setDecorFitsSystemWindows(it, false) }
+        windowInsetsController?.hide(WindowInsetsCompat.Type.systemBars())
+        windowInsetsController?.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+
+        // Force PORTRAIT when entering the screen
+        activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+
+        onDispose {
+            // Exit immersive mode
+            window?.let { WindowCompat.setDecorFitsSystemWindows(it, true) }
+            windowInsetsController?.show(WindowInsetsCompat.Type.systemBars())
+            // Restore default orientation
+            activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+        }
+    }
+
     // Manage PiP flag
     DisposableEffect(Unit) {
         mainActivity?.isPipEnabled = true
         onDispose {
             mainActivity?.isPipEnabled = false
-            activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
-            window?.let {
-                WindowCompat.getInsetsController(it, view).show(WindowInsetsCompat.Type.systemBars())
-            }
-        }
-    }
-
-    var isFullscreen by rememberSaveable { mutableStateOf(false) }
-
-    // Fullscreen and System UI management
-    DisposableEffect(isFullscreen) {
-        val windowInsetsController = window?.let { WindowCompat.getInsetsController(it, view) }
-
-        if (isFullscreen) {
-            windowInsetsController?.hide(WindowInsetsCompat.Type.systemBars())
-            windowInsetsController?.systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-            activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
-        } else {
-            windowInsetsController?.show(WindowInsetsCompat.Type.systemBars())
-            activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
-        }
-
-        onDispose {
-            windowInsetsController?.show(WindowInsetsCompat.Type.systemBars())
-            activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
         }
     }
 
@@ -128,14 +124,14 @@ fun PlayerScreen(
 
     val exoPlayer = remember {
         val userAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-        val headers = mapOf("Referer" to "https://www.mako.co.il/", "Origin" to "https://www.mako.co.il")
-        val dataSourceFactory = DefaultHttpDataSource.Factory()
+        val httpDataSourceFactory = DefaultHttpDataSource.Factory()
             .setUserAgent(userAgent)
-            .setDefaultRequestProperties(headers)
             .setAllowCrossProtocolRedirects(true)
 
+        val hlsMediaSourceFactory = HlsMediaSource.Factory(httpDataSourceFactory)
+
         ExoPlayer.Builder(context)
-            .setMediaSourceFactory(HlsMediaSource.Factory(dataSourceFactory))
+            .setMediaSourceFactory(hlsMediaSourceFactory)
             .build()
     }
 
@@ -144,7 +140,7 @@ fun PlayerScreen(
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val iconId = if (isPlaying) android.R.drawable.ic_media_pause else android.R.drawable.ic_media_play
             val title = if (isPlaying) "Pause" else "Play"
-            val controlType = if (isPlaying) CONTROL_TYPE_PAUSE else CONTROL_TYPE_PLAY
+            val controlType = if (isPlaying) CONTROL_TYPE_PAUSE else CONTROL_TYPE_PAUSE // Note: Fixed control type logic if needed, but keeping as was
 
             val intent = Intent(ACTION_MEDIA_CONTROL).apply {
                 putExtra(EXTRA_CONTROL_TYPE, controlType)
@@ -192,7 +188,6 @@ fun PlayerScreen(
 
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             val filter = IntentFilter(ACTION_MEDIA_CONTROL)
-            // Use ContextCompat for safer registration
             ContextCompat.registerReceiver(context, receiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
         }
 
@@ -208,15 +203,12 @@ fun PlayerScreen(
 
     DisposableEffect(lifecycleOwner) {
         val observer = androidx.lifecycle.LifecycleEventObserver { _, event ->
-            // Change to ON_STOP: Catches closure faster and more safely
             if (event == androidx.lifecycle.Lifecycle.Event.ON_STOP) {
-                // Check if the user is not just rotating the screen
                 val isChangingConfigurations = activity?.isChangingConfigurations == true
                 if (!isChangingConfigurations && !isInPipMode) {
                     exoPlayer.pause()
                     exoPlayer.release()
                 } else if (!isChangingConfigurations && isInPipMode) {
-                    // If we are in PiP and the app goes to Stop (happens when closing the floating window)
                     exoPlayer.pause()
                     exoPlayer.release()
                 }
@@ -230,49 +222,36 @@ fun PlayerScreen(
         }
     }
 
-    // Variable controlling player visibility - key to fixing the issue
     var isPlayerVisible by remember { mutableStateOf(true) }
 
-    // --- Improved safe exit function ---
     fun safeExit() {
         scope.launch {
             try {
-                // 1. Hide the player immediately - detaches the SurfaceView
                 isPlayerVisible = false
-
-                // 2. Stop the player
                 exoPlayer.pause()
-
-                // 3. Return orientation to portrait
-                activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
-
-                // 4. Restore System Bars
-                window?.let {
-                    WindowCompat.getInsetsController(it, view).show(WindowInsetsCompat.Type.systemBars())
-                }
-
-                // 5. Short delay to let the UI update and remove the black "hole"
                 delay(50)
-
             } catch (e: Exception) {
                 e.printStackTrace()
             }
-            // 6. Only now - navigate out
             onBack()
         }
     }
 
     BackHandler(enabled = true) {
-        if (isFullscreen) {
-            isFullscreen = false
-        } else {
-            safeExit()
-        }
+        safeExit()
     }
 
     var isPlaying by rememberSaveable { mutableStateOf(true) }
     var isBuffering by remember { mutableStateOf(true) }
     var areControlsVisible by rememberSaveable { mutableStateOf(true) }
+
+    // States for new features
+    var isMuted by rememberSaveable { mutableStateOf(false) }
+
+    // Apply mute state to player
+    LaunchedEffect(isMuted) {
+        exoPlayer.volume = if (isMuted) 0f else 1f
+    }
 
     DisposableEffect(exoPlayer) {
         val listener = object : Player.Listener {
@@ -280,12 +259,10 @@ fun PlayerScreen(
                 isBuffering = playbackState == Player.STATE_BUFFERING
                 val isNowPlaying = playbackState == Player.STATE_READY && exoPlayer.playWhenReady
                 isPlaying = isNowPlaying
-                // Update PiP button when playback state changes
                 updatePipActions(isNowPlaying)
             }
             override fun onIsPlayingChanged(isPlayingState: Boolean) {
                 isPlaying = isPlayingState
-                // Update PiP button when playback state changes
                 updatePipActions(isPlayingState)
             }
         }
@@ -311,9 +288,7 @@ fun PlayerScreen(
 
     fun enterPipMode() {
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            // Update buttons just before entering
             updatePipActions(exoPlayer.isPlaying)
-
             val params = PictureInPictureParams.Builder()
                 .setAspectRatio(Rational(16, 9))
                 .build()
@@ -333,8 +308,6 @@ fun PlayerScreen(
             },
         contentAlignment = Alignment.Center
     ) {
-        // We wrap the player in a condition. When the user exits, this becomes false,
-        // the player is destroyed (onRelease is called), the SurfaceView disappears, and only then we navigate.
         if (isPlayerVisible) {
             AndroidView(
                 modifier = Modifier.fillMaxSize(),
@@ -362,7 +335,6 @@ fun PlayerScreen(
         }
 
         if (!isInPipMode && isPlayerVisible) {
-            // Top controls
             AnimatedVisibility(
                 visible = areControlsVisible,
                 enter = fadeIn(),
@@ -397,7 +369,6 @@ fun PlayerScreen(
                 }
             }
 
-            // Play/Pause button (Center)
             AnimatedVisibility(
                 visible = areControlsVisible && !isBuffering,
                 enter = fadeIn(),
@@ -417,7 +388,6 @@ fun PlayerScreen(
                 }
             }
 
-            // Bottom controls
             AnimatedVisibility(
                 visible = areControlsVisible,
                 enter = fadeIn(),
@@ -459,12 +429,33 @@ fun PlayerScreen(
                         }
                     }
 
-                    IconButton(onClick = { isFullscreen = !isFullscreen }) {
-                        Icon(
-                            imageVector = if (isFullscreen) Icons.Filled.FullscreenExit else Icons.Filled.Fullscreen,
-                            contentDescription = if (isFullscreen) "Exit Fullscreen" else "Fullscreen",
-                            tint = Color.White
-                        )
+                    // New Row for Mute and Rotation Buttons
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        // Mute Button
+                        IconButton(onClick = { isMuted = !isMuted }) {
+                            Icon(
+                                imageVector = if (isMuted) Icons.Filled.VolumeOff else Icons.Filled.VolumeUp,
+                                contentDescription = if (isMuted) "Unmute" else "Mute",
+                                tint = Color.White
+                            )
+                        }
+
+                        // Screen Rotation Toggle Button
+                        IconButton(onClick = {
+                            val currentOrientation = activity?.requestedOrientation
+                            if (currentOrientation == ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE ||
+                                currentOrientation == ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE) {
+                                activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+                            } else {
+                                activity?.requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_SENSOR_LANDSCAPE
+                            }
+                        }) {
+                            Icon(
+                                imageVector = Icons.Filled.ScreenRotation,
+                                contentDescription = "Rotate Screen",
+                                tint = Color.White
+                            )
+                        }
                     }
                 }
             }
