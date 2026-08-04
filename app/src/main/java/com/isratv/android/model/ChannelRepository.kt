@@ -14,7 +14,7 @@ class ChannelRepository @Inject constructor(
     @ApplicationContext private val context: Context
 ) {
     // Direct link to the Gist containing the channel list.
-    private val BASE_URL = "https://gist.githubusercontent.com/BitBOY21/b0b95de46a230d88f98aea8304c30d3c/raw/channels.json"
+    private val BASE_URL = "https://gist.githubusercontent.com/BitBOY21/0f7be7f53b9eb0ca81ffa9c3229c9f64/raw/436e1c0386b71d46afb8edd4d9b9b1d99c0b7ea6/channels_test.json"
     
     // In-memory cache for channels after loading.
     private var loadedChannels: List<Channel> = emptyList()
