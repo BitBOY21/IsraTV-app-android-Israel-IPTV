@@ -24,7 +24,7 @@
 ## 📱 Screenshots
 | Channel List | Video Player |
 | :---: | :---: |
-| ![Channel List](screenshots/Channel_List.jpeg) | ![Video Player](screenshots/Favorites.jpeg) |
+| ![Channel List](screenshots/Channel_List.jpeg) | ![Video Player](screenshots/Video_Player.jpeg) |
 
 ## 📥 Installation
 Download the latest installation file (APK) directly from the [Releases](https://github.com/BitBOY21/IsraTV-app-android-Israel-IPTV/releases) section.
