@@ -13,11 +13,12 @@
 
 ## ✨ Key Features
 * **Modern UI:** High-performance interface built with Jetpack Compose.
-* **Favorites:** Save channels to a personal list via local **Room DB**.
+* **Favorites:** Save channels to a personal list via local Room DB.
 * **Picture-in-Picture (PiP):** Watch in a floating window while using other apps.
 * **Background Audio / Audio-Only:** Seamless continuous listening with dedicated background audio playback.
 * **Smart Search:** Find channels instantly by name.
-* **Advanced Player:** Optimized HLS streaming powered by **ExoPlayer**.
+* **Advanced Player:** Optimized HLS streaming powered by ExoPlayer.
+* **In-Player Channel Bar:** Switch channels seamlessly without leaving the live playback screen.
 * **Auto-Updates:** Automatically checks for and installs new versions within the app.
 
 ## 📱 Screenshots
